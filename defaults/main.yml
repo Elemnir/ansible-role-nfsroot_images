@@ -1,0 +1,12 @@
+---
+
+ansible_user_uid: 5050
+ansible_user_password: ""
+ansible_user_pubkey: "{{ lookup('file', 'keys/ansible_rsa.pub') }}"
+
+nfsroot_image_list: []
+# - path: /data/nfs/nfsroot/cent7
+#   addr: 10.0.0.1
+#   groupname: "Minimal install"
+#   releasever: 7
+#   sshkey_types: ['rsa', 'ecdsa', 'ed25519']

@@ -1,0 +1,89 @@
+---
+
+- become: True
+  block:
+
+  - name: Make sure the password is set
+    assert:
+      that:
+        - "ansible_user_password != ''"
+
+  - name: Do the base install
+    shell: >
+        yum groups -y install '{{ item.groupname }}' 
+        --releasever={{ item.releasever }} --installroot={{ item.path }}
+    args:
+      creates: "{{ item.path }}"
+    loop: "{{ nfsroot_image_list }}"
+
+  - name: Write the fstab
+    blockinfile:
+      create: True
+      path: "{{ item.path }}/etc/fstab"
+      block: |
+        {{ item.addr}}:{{ item.path }} / nfs ro 0 0
+        none        /tmp        tmpfs   defaults   0 0
+        tmpfs       /dev/shm    tmpfs   defaults   0 0
+        sysfs       /sys        sysfs   defaults   0 0
+        proc        /proc       proc    defaults   0 0
+    loop: "{{ nfsroot_image_list }}"
+
+  - name: Write the readonly-root file
+    copy:
+      dest: "{{ item.path }}/etc/sysconfig/readonly-root"
+      content: |
+        READONLY=yes
+        TEMPORARY_STATE=yes
+        RW_MOUNT=/var/lib/stateless/writable
+        RW_OPTIONS=
+        STATE_LABEL=stateless-state
+        STATE_MOUNT=/var/lib/stateless/state
+        STATE_OPTIONS=
+        CLIENTSTATE=
+        SLAVE_MOUNTS=yes
+    loop: "{{ nfsroot_image_list }}"
+
+  - name: Generate SSH host keys
+    shell: >
+        ssh-keygen -q -C "" -N "" -t {{ item.1 }} 
+        -f {{ item.0.path }}/etc/ssh/ssh_host_{{ item.1 }}_key
+    args:
+      creates: "{{ item.0.path }}/etc/ssh/ssh_host_{{ item.1 }}_key"
+    with_subelements:
+      - "{{ nfsroot_image_list }}"
+      - sshkey_types
+
+  - name: Make Selinux Permissive
+    copy:
+      dest: "{{ item.path }}/etc/selinux/config"
+      content: |
+        SELINUX=permissive
+        SELINUXTYPE=targeted
+    loop: "{{ nfsroot_image_list }}"
+
+  - name: Add the ansible user
+    shell: > 
+        chroot {{ item.path }} useradd --create-home --no-user-group --shell /bin/bash 
+        --gid wheel --password '{{ ansible_user_password }}' --uid {{ ansible_user_uid }} 
+        ansible
+    args:
+      creates: "{{ item.path }}/home/ansible"
+    loop: "{{ nfsroot_image_list }}"
+
+  - name: Install ansible's SSH Key
+    authorized_key:
+      user: ansible
+      path: "{{ item.path }}/home/ansible/.ssh/authorized_keys"
+      key: "{{ ansible_user_pubkey }}"
+    loop: "{{ nfsroot_image_list }}"
+
+  - name: Give ansible password-less sudo
+    copy:
+      dest: "{{ item.path }}/etc/sudoers.d/ansible"
+      content: |
+        Defaults:ansible !requiretty
+
+        ansible ALL=(ALL:ALL) NOPASSWD:ALL
+    loop: "{{ nfsroot_image_list }}"
+
+
