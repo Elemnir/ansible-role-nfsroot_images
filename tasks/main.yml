@@ -16,12 +16,31 @@
       creates: "{{ item.path }}"
     loop: "{{ nfsroot_image_list }}"
 
+  - name: Write the rwtab
+    template:
+      src: rwtab_minimal.j2
+      dest: "{{ item.path }}/etc/rwtab"
+    loop: "{{ nfsroot_image_list }}"
+
+  - name: Make sure that /etc/resolv.conf exists
+    copy:
+      dest: "{{ item.path }}/etc/resolv.conf"
+      content: ""
+    loop: "{{ nfsroot_image_list }}"
+
+  - name: Make sure that /etc/aliases.db exists
+    copy:
+      dest: "{{ item.path }}/etc/aliases.db"
+      content: ""
+    loop: "{{ nfsroot_image_list }}"
+
   - name: Write the fstab
     blockinfile:
       create: True
       path: "{{ item.path }}/etc/fstab"
       block: |
-        {{ item.addr}}:{{ item.path }} / nfs ro 0 0
+        {{ item.addr}}:{{ item.path }} / nfs {% if item.readonly %}ro{% else %}rw{% endif %} 0 0
+        
         none        /tmp        tmpfs   defaults   0 0
         tmpfs       /dev/shm    tmpfs   defaults   0 0
         sysfs       /sys        sysfs   defaults   0 0
@@ -32,12 +51,13 @@
     copy:
       dest: "{{ item.path }}/etc/sysconfig/readonly-root"
       content: |
-        READONLY=yes
+        READONLY={% if item.readonly %}yes{% else %}no{% endif %}
+        
         TEMPORARY_STATE=yes
-        RW_MOUNT=/var/lib/stateless/writable
+        RW_MOUNT=/stateless/writable
         RW_OPTIONS=
         STATE_LABEL=stateless-state
-        STATE_MOUNT=/var/lib/stateless/state
+        STATE_MOUNT=/stateless/state
         STATE_OPTIONS=
         CLIENTSTATE=
         SLAVE_MOUNTS=yes

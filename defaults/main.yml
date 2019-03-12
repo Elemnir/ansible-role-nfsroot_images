@@ -10,3 +10,4 @@ nfsroot_image_list: []
 #   groupname: "Minimal install"
 #   releasever: 7
 #   sshkey_types: ['rsa', 'ecdsa', 'ed25519']
+#   readonly: False
