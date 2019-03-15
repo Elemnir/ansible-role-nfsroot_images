@@ -2,7 +2,7 @@
 
 ansible_user_uid: 5050
 ansible_user_password: ""
-ansible_user_pubkey: "{{ lookup('file', 'keys/ansible_rsa.pub') }}"
+ansible_user_pubkey: "{{ lookup('file', '../keys/ansible_rsa.pub') }}"
 
 nfsroot_image_list: []
 # - path: /data/nfs/nfsroot/cent7
