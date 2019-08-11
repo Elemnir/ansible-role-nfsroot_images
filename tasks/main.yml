@@ -6,20 +6,26 @@
   - name: Make sure the password is set
     assert:
       that:
-        - "ansible_user_password != ''"
+        - "nfsridef_addr != ''"
+        - "nfsridef_ansible_password != ''"
 
   - name: Do the base install
     shell: >
-        yum groups -y install '{{ item.groupname }}' 
-        --releasever={{ item.releasever }} --installroot={{ item.path }}
+        yum groups -y install '{{ item.groupname|default(nfsridef_groupname) }}' 
+        --releasever={{ item.releasever|default(nfsridef_releasever) }} 
+        --installroot={{ item.path }}
     args:
       creates: "{{ item.path }}"
     loop: "{{ nfsroot_image_list }}"
 
   - name: Write the rwtab
-    template:
-      src: rwtab_minimal.j2
+    copy:
       dest: "{{ item.path }}/etc/rwtab"
+      content: |
+        files /etc
+        files /home/ansible
+        files /var
+        empty /tmp
     loop: "{{ nfsroot_image_list }}"
 
   - name: Make sure that /etc/resolv.conf exists
@@ -39,7 +45,8 @@
       create: True
       path: "{{ item.path }}/etc/fstab"
       block: |
-        {{ item.addr}}:{{ item.path }} / nfs {% if item.readonly %}ro{% else %}rw{% endif %} 0 0
+        {{ item.addr|default(nfsridef_addr) }}:{{ item.path }} / nfs 
+          {%- if item.readonly|default(nfsridef_readonly) %} ro{% else %} rw{% endif %} 0 0
         
         none        /tmp        tmpfs   defaults   0 0
         tmpfs       /dev/shm    tmpfs   defaults   0 0
@@ -51,7 +58,7 @@
     copy:
       dest: "{{ item.path }}/etc/sysconfig/readonly-root"
       content: |
-        READONLY={% if item.readonly %}yes{% else %}no{% endif %}
+        READONLY={% if item.readonly|default(nfsridef_readonly) %}yes{% else %}no{% endif %}
         
         TEMPORARY_STATE=yes
         RW_MOUNT=/stateless/writable
@@ -63,15 +70,29 @@
         SLAVE_MOUNTS=yes
     loop: "{{ nfsroot_image_list }}"
 
+  - name: Make a list of SSH key types
+    set_fact:
+      key_type_str: |
+        {% for item in nfsroot_image_list %}
+        {% if 'sshkey_types' in item %}
+        {% for kt in item.sshkey_types %}
+        - { path: '{{ item.path }}', keytype: '{{ kt }}' }
+        {% endfor %}
+        {% else %}
+        {% for kt in nfsridef_sshkey_types %}
+        - { path: '{{ item.path }}', keytype: '{{ kt }}' }
+        {% endfor %}
+        {% endif %}
+        {% endfor %}
+    check_mode: no
+
   - name: Generate SSH host keys
     shell: >
-        ssh-keygen -q -C "" -N "" -t {{ item.1 }} 
-        -f {{ item.0.path }}/etc/ssh/ssh_host_{{ item.1 }}_key
+        ssh-keygen -q -C "" -N "" -t {{ item.keytype }} 
+        -f {{ item.path }}/etc/ssh/ssh_host_{{ item.keytype }}_key
     args:
-      creates: "{{ item.0.path }}/etc/ssh/ssh_host_{{ item.1 }}_key"
-    with_subelements:
-      - "{{ nfsroot_image_list }}"
-      - sshkey_types
+      creates: "{{ item.path }}/etc/ssh/ssh_host_{{ item.keytype }}_key"
+    with_items: "{{ key_type_str|from_yaml }}"
 
   - name: Make Selinux Permissive
     copy:
@@ -84,8 +105,8 @@
   - name: Add the ansible user
     shell: > 
         chroot {{ item.path }} useradd --create-home --no-user-group --shell /bin/bash 
-        --gid wheel --password '{{ ansible_user_password }}' --uid {{ ansible_user_uid }} 
-        ansible
+        --gid wheel --password '{{ item.ansible_password|default(nfsridef_ansible_password) }}'
+        --uid {{ item.ansible_uid|default(nfsridef_ansible_uid) }} ansible
     args:
       creates: "{{ item.path }}/home/ansible"
     loop: "{{ nfsroot_image_list }}"
@@ -94,7 +115,7 @@
     authorized_key:
       user: ansible
       path: "{{ item.path }}/home/ansible/.ssh/authorized_keys"
-      key: "{{ ansible_user_pubkey }}"
+      key: "{{ item.ansible_pubkey|default(nfsridef_ansible_pubkey) }}"
     loop: "{{ nfsroot_image_list }}"
 
   - name: Give ansible password-less sudo
